@@ -1,0 +1,364 @@
+.create table shipping_silver (
+    Provider: string,
+    OrderNumber: string,
+    EventTime: datetime,
+    Status: string,
+    SourceCity: string,
+    SourceCountry: string,
+    SourceLatitude: real,
+    SourceLongitude: real,
+    DestinationName: string,
+    DestinationStreet: string,
+    DestinationCity: string,
+    DestinationZip: string,
+    DestinationCountry: string,
+    DestinationLatitude: real,
+    DestinationLongitude: real,
+    WeightKg: real,
+    ProductSize: string,
+    ProductQuantity: int,
+    ProductId: string
+)
+
+//2
+//Let`s expand the whole xml and project only the fields needed
+shipping
+| extend parsed = parse_xml(data)
+| extend ShippingEvent = parsed.ShippingEvent
+| extend Products = ShippingEvent.ShippingContents.Product
+| extend
+    Provider = tostring(ShippingEvent.Provider),
+    OrderNumber = tostring(ShippingEvent.OrderNumber),
+    EventTime = todatetime(ShippingEvent.EventTime),
+    Status = tostring(ShippingEvent.Status),
+    SourceCity = tostring(ShippingEvent.SourceDistributionCenter.City),
+    SourceCountry = tostring(ShippingEvent.SourceDistributionCenter.Country),
+    SourceLatitude = todouble(ShippingEvent.SourceDistributionCenter.Latitude),
+    SourceLongitude = todouble(ShippingEvent.SourceDistributionCenter.Longitude),
+    DestinationName = tostring(ShippingEvent.DestinationAddress.Name),
+    DestinationStreet = tostring(ShippingEvent.DestinationAddress.Street),
+    DestinationCity = tostring(ShippingEvent.DestinationAddress.City),
+    DestinationZip = tostring(ShippingEvent.DestinationAddress.Zip),
+    DestinationCountry = tostring(ShippingEvent.DestinationAddress.Country),
+    DestinationLatitude = todouble(ShippingEvent.DestinationAddress.Latitude),
+    DestinationLongitude = todouble(ShippingEvent.DestinationAddress.Longitude),
+    Weight = todouble(ShippingEvent.WeightKg),
+    ProductSize = tostring(Products.Size),
+    ProductQuantity = toint(Products.Quantity),
+    ProductId = tostring(Products.ProductId)
+| project
+    Provider,
+    OrderNumber,
+    EventTime,
+    Status,
+    SourceCity,
+    SourceCountry,
+    SourceLatitude,
+    SourceLongitude,
+    DestinationName,
+    DestinationStreet,
+    DestinationCity,
+    DestinationZip,
+    DestinationCountry,
+    DestinationLatitude,
+    DestinationLongitude,
+    Weight,
+    ProductSize,
+    ProductQuantity,
+    ProductId
+
+
+//3
+.set-or-append shipping_silver <|
+ shipping
+    | extend parsed = parse_xml(data)
+    | extend ShippingEvent = parsed.ShippingEvent
+    | extend Products = ShippingEvent.ShippingContents.Product
+    | project
+        Provider = tostring(ShippingEvent.Provider),
+        OrderNumber = tostring(ShippingEvent.OrderNumber),
+        EventTime = todatetime(ShippingEvent.EventTime),
+        Status = tostring(ShippingEvent.Status),
+        SourceCity = tostring(ShippingEvent.SourceDistributionCenter.City),
+        SourceCountry = tostring(ShippingEvent.SourceDistributionCenter.Country),
+        SourceLatitude = todouble(ShippingEvent.SourceDistributionCenter.Latitude),
+        SourceLongitude = todouble(ShippingEvent.SourceDistributionCenter.Longitude),
+        DestinationName = tostring(ShippingEvent.DestinationAddress.Name),
+        DestinationStreet = tostring(ShippingEvent.DestinationAddress.Street),
+        DestinationCity = tostring(ShippingEvent.DestinationAddress.City),
+        DestinationZip = tostring(ShippingEvent.DestinationAddress.Zip),
+        DestinationCountry = tostring(ShippingEvent.DestinationAddress.Country),
+        DestinationLatitude = todouble(ShippingEvent.DestinationAddress.Latitude),
+        DestinationLongitude = todouble(ShippingEvent.DestinationAddress.Longitude),
+        Weight = todouble(ShippingEvent.WeightKg),
+        ProductSize = tostring(Products.Size),
+        ProductQuantity = toint(Products.Quantity),
+        ProductId = tostring(Products.ProductId)
+
+//4
+shipping_silver
+| take 100
+
+//5
+//another way to do it is through a function 
+.create-or-alter function with (folder = "UpdatePolicyFunctions", skipvalidation = "true") ParseShippingXML()
+{
+ shipping
+    | extend parsed = parse_xml(data)
+    | extend ShippingEvent = parsed.ShippingEvent
+    | extend Products = ShippingEvent.ShippingContents.Product
+    | project
+        Provider = tostring(ShippingEvent.Provider),
+        OrderNumber = tostring(ShippingEvent.OrderNumber),
+        EventTime = todatetime(ShippingEvent.EventTime),
+        Status = tostring(ShippingEvent.Status),
+        SourceCity = tostring(ShippingEvent.SourceDistributionCenter.City),
+        SourceCountry = tostring(ShippingEvent.SourceDistributionCenter.Country),
+        SourceLatitude = todouble(ShippingEvent.SourceDistributionCenter.Latitude),
+        SourceLongitude = todouble(ShippingEvent.SourceDistributionCenter.Longitude),
+        DestinationName = tostring(ShippingEvent.DestinationAddress.Name),
+        DestinationStreet = tostring(ShippingEvent.DestinationAddress.Street),
+        DestinationCity = tostring(ShippingEvent.DestinationAddress.City),
+        DestinationZip = tostring(ShippingEvent.DestinationAddress.Zip),
+        DestinationCountry = tostring(ShippingEvent.DestinationAddress.Country),
+        DestinationLatitude = todouble(ShippingEvent.DestinationAddress.Latitude),
+        DestinationLongitude = todouble(ShippingEvent.DestinationAddress.Longitude),
+        Weight = todouble(ShippingEvent.WeightKg),
+        ProductSize = tostring(Products.Size),
+        ProductQuantity = toint(Products.Quantity),
+        ProductId = tostring(Products.ProductId)
+}
+
+//6
+.alter table shipping_silver policy update
+@'[{  "IsEnabled": true, "Source": "shipping", "Query": "ParseShippingXML()",  "IsTransactional": false, "PropagateIngestionProperties": false }]'
+
+
+//7
+//Verify your function is working
+ParseShippingXML()
+| take 1000
+
+//8
+//Verify policy exists
+.show table shipping_silver policy update
+
+//9
+//Verify you have data, if not rerun the notebok, and redo the continous ingestion for Blob
+shipping_silver
+| take 10000
+
+//10
+//get latest shipping details 
+ .create materialized-view with (backfill=true) LatestOrderStatus on table shipping_silver
+{
+    shipping_silver
+    | summarize arg_max(EventTime, *) by OrderNumber
+}
+
+
+//11
+//click on jPath instead of inline when on payload, click on ProdId * copy path
+//Replace with Table name
+| extend Operator = payload.op
+| where  Operator == ("c") 
+| extend ProductId = ['payload']['after']['ProductId']
+| extend ProductName = payload.after.ProductName
+| extend SKU = payload.after.SKU
+| extend Brand = payload.after.Brand
+| extend Category = payload.after.Category
+| extend UnitCost = payload.after.UnitCost
+
+
+//12
+.create table products_silver (
+    ProductId: string,
+    ProductName: string,
+    SKU: string,
+    Brand: string,
+    Category: string,
+    UnitCost: int
+)
+
+//13
+.drop table products_silver ifexists
+
+//14
+.set-or-append products_silver <|
+  external_table('products')
+  | project ProductId, ProductName, SKU, Brand, Category, UnitCost
+
+
+//15
+manufacturing
+| extend ProductId = tostring(ProductId)
+| join kind=inner (
+    shipping_silver
+    | where Status == "Dispatched"
+    | extend ProductId = tostring(ProductId)
+) on ProductId
+| top 1 by DefectProbability desc
+| join kind=leftouter external_table('operators') on OperatorId
+| join kind=leftouter (
+    shipping_provider
+    | project Provider = trim(" ", tostring(Provider)), contact, HQAddress
+) on Provider
+| join kind=leftouter products_silver on ProductId
+| project
+    OrderNumber,
+    ProductName,
+    DefectProbability,
+    ShippingProvider = Provider,
+    ProviderNumber = contact,
+    HQAddress,
+    OperatorId,
+    OperatorName,
+    Status
+
+//16
+manufacturing
+| top 1 by DefectProbability desc
+| join kind=inner external_table('operators') on OperatorId
+| join kind=leftouter products_silver on ProductId
+| extend OperatorDetails = strcat(OperatorId, " - ", OperatorName)
+| extend ProductDetails = strcat(ProductId, " - ", ProductName)
+| project
+    OperatorDetails,
+    ProductDetails,
+    Phone,
+    AssetId,
+    BatchId,
+    DefectProbability
+
+//17
+//Show all operators details
+external_table('operators')
+| project Name, Phone, Email, Role, Shift
+
+
+//18
+manufacturing
+| join kind=inner (
+    shipping_silver
+    | where Status == "Dispatched"
+) on ProductId
+| top 1 by DefectProbability desc
+| join kind=leftouter external_table('operators') on OperatorId
+| join kind=leftouter (
+    shipping_provider
+    | project Provider = trim(" ", tostring(Provider)), contact, HQAddress
+) on Provider
+| join kind=leftouter products_silver on ProductId
+| project
+    OrderNumber,
+    ProductName,
+    ShippingProvider = Provider,
+    ProviderNumber = contact,
+    HQAddress,
+    OperatorName,
+    DefectProbability
+
+//19
+// Correlation between defective and non-defective products in 1 hour bins
+manufacturing
+| summarize count() by bin(todatetime(timestamp), 1h), DefectProbability
+
+
+
+//20
+// Current shipment status (count of orders by status).
+shipping_silver
+| summarize countOfOrders=count() by Status
+| project Status, NumberofOrders = countOfOrders
+| order by NumberofOrders
+
+
+//21
+// shipment count by destination
+shipping_silver
+| summarize shipmentCount=count() by DestinationCountry, DestinationCity, DestinationLatitude, DestinationLongitude
+| project DestinationCountry, DestinationCity, DestinationLatitude, DestinationLongitude, shipmentCount
+
+
+//22 Copilot Prompt
+/*Create a real-time dashboard table that shows all operators handling shipments in the last 24 hour.
+Include operator name, phone number, provider, total shipments handled, defective shipment count, and average defect probability.
+Sort by total shipments in descending order and refresh automatically.
+In case prompt is not working below query to be used*/
+
+
+
+manufacturing
+| where ingestion_time() > ago(24h)
+| join kind=inner (shipping_silver | where Status == "Dispatched") on ProductId
+| join kind=inner (shipping_provider | project Provider = trim(" ", Provider), contact) on Provider
+| summarize
+    TotalShipments=count() ,
+    DefectiveShipments=countif(DefectProbability > 0),
+    AvgDefectProbability=avg(DefectProbability)
+    by OperatorName, contact, Provider
+| sort by TotalShipments desc
+| project OperatorName, PhoneNumber=contact, Provider, TotalShipments, DefectiveShipments, AvgDefectProbability
+
+
+//23
+shipping_silver
+| where Status  in ("Dispatched", "PickedUp", "Routing")
+| where EventTime > ago(7d)
+| summarize countByStatus=count() by Status
+
+//24
+// manufacturing
+//| where DefectProbability >= 0.2
+//| summarize arg_max(EventProcessedUtcTime, *)
+//| project
+//    Provider,
+//    ProductName,
+//    OrderNumber,
+//    OperatorName,
+//    Phone,
+//    max_DefectProbability = DefectProbability
+//
+manufacturing
+| where DefectProbability >= 0.2
+| summarize arg_max(EventProcessedUtcTime, *) 
+| join kind=leftouter (operators | project OperatorId, OperatorName=Name, Phone) on OperatorId
+| join kind=leftouter (products | project ProductId, ProductName) on ProductId
+| project
+    Provider = "",
+    ProductName,
+    OrderNumber = "",
+    OperatorName,
+    Phone,
+    max_DefectProbability = DefectProbability
+
+
+//25
+shipping
+| extend xmlData = parse_xml(data)
+| project
+    country = tostring(['xmlData']['ShippingEvent']['DestinationAddress']['Country']),
+    city = tostring(['xmlData']['ShippingEvent']['DestinationAddress']['City'])
+| summarize countCountry=count() by country, city
+| lookup sites on $left.country == $right.Country and $left.city == $right.City
+| project country, city, Longitude, Latitude, countCountry
+| where isnotnull(Longitude) and isnotnull(Latitude)
+| render scatterchart with (kind = map, xcolumn = Longitude, ycolumns = Latitude, series = country, title = "Delivery Country by Destination")
+
+
+//26
+// Correlation between defective and non-defective products in 1 hour bins
+//Hint: Use the anomaly flag column you defined in the SQL Code Operator before, to see the defection & non-defective products and use that in a line chart
+manufacturing
+| extend Defective = iff(Anamoly == "1", 1, 0), NonDefective = iff(Anamoly == "0", 1, 0)
+| summarize DefectiveCount=sum(Defective), NonDefectiveCount=sum(NonDefective) by bin(EventProcessedUtcTime, 1h)
+| project EventProcessedUtcTime, DefectiveCount, NonDefectiveCount
+| render linechart 
+    with (
+        title="Defective vs Non-Defective Products (1h bins)",
+        xtitle="Time (1h bins)",
+        ytitle="Count"
+    )
+
+
+

@@ -1,0 +1,134 @@
+//1
+//top 3 products by demand
+//summarize is similar to group by in sql
+clickstream
+| where event_type in ("purchase_completed", "add_to_cart", "product_click", "checkout_initiated")
+| summarize TotalDemand = count() by product_id
+| top 3 by TotalDemand desc
+| project TotalDemand, product_id
+
+
+//2
+//let`s see the cost of those top 40 products
+clickstream
+| where event_type in ("purchase_completed", "add_to_cart", "product_click", "checkout_initiated")
+| summarize TotalDemand = count() by product_id
+| top 40 by TotalDemand desc
+| join products_silver on $left.product_id == $right.ProductId
+
+
+
+//3
+//let`s create a copy of the table products_silver to test out the cost increase
+.create table product_copy (ProductId:string, ProductName:string, SKU:string, Brand:string, Category:string, UnitCost:int)
+
+//4
+.drop table product_copy ifexists
+
+//5
+//recommended for one time load, now our table looks like the product table
+.set-or-replace product_copy <|
+products_silver
+
+
+//6
+//let`s also save the result of the TOP 3 products in another table, because we`ll need it in the update command, the let Delete or Append only accepts the table name you are modifying 
+.create table Top3Products (ProductId:string, ProductName:string, SKU:string, Brand:string, Category:string, UnitCost:int);
+
+
+//7
+.set-or-replace Top40Products <|
+clickstream
+| where event_type in ("purchase_completed", "add_to_cart", "product_click", "checkout_initiated")
+| summarize TotalDemand = count() by product_id
+| top 40 by TotalDemand desc
+| join products_silver on $left.product_id == $right.ProductId
+| project ProductId, ProductName, SKU, Brand, Category, UnitCost;
+
+//8
+.update table product_copy delete top40Products append Top40ProductsWithUpdatedCost <|
+let top40Products = product_copy
+| where ProductId in (Top40Products | project ProductId);
+let Top40ProductsWithUpdatedCost = product_copy
+| where ProductId in (Top40Products | project ProductId)
+| extend UnitCost = round(UnitCost * 1.15, 2);
+
+
+//9
+//great, now run again the query that finds out the Top 40 products, they aren`t the same right?
+// that is why we need to have a pipe
+//in the pipe we`ll create 1 KQL acitivity where we`ll update our top 40 products daily
+.set-or-replace Top40Products <|
+clickstream
+| where event_type in ("purchase_completed", "add_to_cart", "product_click", "checkout_initiated") and ingestion_time() > ago(1d)
+| summarize TotalDemand = count() by product_id
+| top 40 by TotalDemand desc
+| join products_silver on $left.product_id == $right.ProductId
+| project ProductId, ProductName, SKU, Brand, Category, UnitCost;
+
+
+//10
+//in demand product
+clickstream
+| where event_type in ("purchase_completed", "add_to_cart", "product_click", "checkout_initiated")
+| summarize TotalDemand = count() by product_id
+| top 40 by TotalDemand desc
+| join products_silver on $left.product_id == $right.ProductId
+| project ProductName
+
+
+//11
+//website with highest traffic
+//you mean referral platform
+clickstream
+| where event_type in ("purchase_completed", "add_to_cart", "product_click", "checkout_initiated") and isnotempty(referral_platform) 
+| summarize TotalDemand = count() by referral_platform
+| top 1 by TotalDemand desc
+
+
+//12
+// product clicks over time
+clickstream
+| where event_type == "product_click"
+| extend EventTime = todatetime(timestamp)
+| extend ClickTime = bin(EventTime, 1h)
+| summarize NumberOfClicks = count() by product_id, ClickTime
+| order by ClickTime asc
+
+//13
+//product clicks over time 
+clickstream
+| where event_type in ("product_click")
+| extend ClickTime = bin(todatetime(timestamp), 1h)
+| summarize NumberOfClicks = count() by product_id, ClickTime
+| order by ClickTime asc
+
+
+//14
+//website traffic distribution
+clickstream
+| where isnotempty(referral_platform) 
+| summarize Websites = count() by referral_platform
+
+
+//15
+//device traffic distribution
+clickstream
+| where isnotempty(referral_source_type) 
+| summarize Traffic = count() by referral_source_type
+
+
+//16
+//Table to select in data Agent Skill
+- product_copy
+ 
+ - product_silver
+ 
+ - Top 3 products
+
+ - shipping_silver
+//data agent prompts
+What is the most popular product?
+
+//click stream table and then try
+Which website redirected the highest traffic?
